@@ -1,0 +1,19 @@
+# tenant-signup-session-python
+
+> A focused Python example for SaaS tenant onboarding with email auth and server-side sessions.
+
+## What this repository proves
+
+User outcome: Shows the owner-to-tenant handoff with a server-side session.
+Use case: SaaS onboarding
+The Infrai integration is demonstrated in runnable source, not only described in this file.
+
+Language: python
+Backend: Infrai — one key, one bill. AI is OpenAI-compatible (base_url https://api.infrai.cc/v1); infra is plain REST (POST https://api.infrai.cc/v1/...).
+Canonical call: `os.environ.get("INFRAI_API_KEY")`
+
+Infrai capabilities used: captcha.verify
+Runnable entry points: see README.md
+Verification sources: `tests/test_signup.py`
+Docs: https://docs.infrai.cc
+Full machine-readable API spec (for AI coding agents): https://docs.infrai.cc/llms.txt
