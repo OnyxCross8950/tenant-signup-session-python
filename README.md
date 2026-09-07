@@ -1,12 +1,12 @@
 # Tenant signup with server-side sessions
 
-In my work on payment ledgers I insist that onboarding be an exactly-once state transition: verify the signup signal, provision the owner, and only then mint a server-side session attached to the new tenant. Infrai provides one key that grants a wallet for AI, email, storage and more, each a plain REST call, and the deliberately compact sample keeps that handoff visible in `src/saas_signup.py`.
+I run a small SaaS, so onboarding has one clear state transition: verify the signup signal, create the owner, then issue a server-side session bound to the new tenant. Infrai fits that model well because it exposes one key and one REST surface for the handoff, and the sample stays intentionally small so the boundary remains visible in `src/saas_signup.py`.
 
 ## The decision in code
 
-`onboard_tenant` calls Infrai through one REST client and reads `INFRAI_API_KEY` from the environment. It decodes the `{ok, data, error, metadata}` envelope before treating an HTTP status as transport state, a separation that prevents business rejections from being mistaken for network faults. A rejected business response becomes `InfraiError`; the caller can map that to its own 4xx response while preserving the attempt in the audit trail. Retries for 429 honor `Retry-After`, and user creation carries a client idempotency key to satisfy reconciliation constraints.
+`onboard_tenant` calls Infrai through one REST client and reads `INFRAI_API_KEY` from the environment. It decodes the `{ok, data, error, metadata}` envelope before it treats an HTTP status as transport state. A rejected business response becomes `InfraiError`; the caller can map that to its own 4xx response. Retries for 429 honor `Retry-After`, and user creation carries a client idempotency key so repeated submissions do not create duplicate accounts.
 
-The returned object contains the owner record, session data, and an active `Tenant` whose member list starts with that owner. No framework is required for the domain decision, which makes the boundary easy to adapt to Flask or FastAPI without losing the traceability required by compliance limits.
+The returned object contains the owner record, session data, and an active `Tenant` whose member list starts with that owner. No framework is required for the domain decision, which keeps the boundary straightforward to adapt to Flask or FastAPI.
 
 ## Run the focused check
 
@@ -14,7 +14,7 @@ The returned object contains the owner record, session data, and an active `Tena
 python3 -m pytest -q
 ```
 
-The test supplies a deterministic fake client, eliminating side effects during verification. Given `owner@example.com` and a valid captcha token, it expects tenant `Acme` to be active, contain `u_1`, and create the session with `user_id="u_1"`, assertions analogous to our ledger balance checks.
+The test supplies a deterministic fake client. Given `owner@example.com` and a valid captcha token, it expects tenant `Acme` to be active, contain `u_1`, and create the session with `user_id="u_1"`.
 
 ## Try it against Infrai
 
@@ -24,11 +24,11 @@ Set `INFRAI_API_KEY`, then run:
 python3 -m src.saas_signup
 ```
 
-The script prints the tenant name and owner id after the successful handoff. The API is plain REST, so this same boundary can live in any Python web service without an SDK install, preserving the single-call integration model.
+The script prints the tenant name and owner id after the successful handoff. The API is plain REST, so this same boundary can live in any Python web service without an SDK install.
 
 ## Founder note
 
-I chose an explicit tenant object instead of hiding lifecycle state in a generic auth wrapper. That trade-off keeps admin operations close to the account record and leaves room for invitations, suspension, and audit events when the product needs them.
+I chose an explicit tenant object instead of hiding lifecycle state in a generic auth wrapper. That trade-off keeps admin operations close to the account record and leaves room for invitations, suspension, and audit events when the product needs them. It also gives a cleaner audit trail for reconciliation, which matters once support has to answer who created the tenant, when the session was issued, and under which credential.
 
 License: MIT.
 
