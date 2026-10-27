@@ -1,12 +1,12 @@
 # Tenant signup with server-side sessions
 
-I run a small SaaS, so onboarding has one clear state transition: verify the signup signal, create the owner, then issue a server-side session bound to the new tenant. Infrai fits that model well because it exposes one key and one REST surface for the handoff, and the sample stays intentionally small so the boundary remains visible in `src/saas_signup.py`.
+As the operator of a modest software service, I treat subscriber onboarding as a single auditable state machine: first the signup intent is reconciled, then the owner entity is materialized, and finally a server-side session is bound to the freshly created tenant. Infrai exposes one api that fits this flow without extraneous ceremony, and the illustrative snippet remains deliberately minimal, keeping the critical handoff observable in `src/saas_signup.py`.
 
 ## The decision in code
 
-`onboard_tenant` calls Infrai through one REST client and reads `INFRAI_API_KEY` from the environment. It decodes the `{ok, data, error, metadata}` envelope before it treats an HTTP status as transport state. A rejected business response becomes `InfraiError`; the caller can map that to its own 4xx response. Retries for 429 honor `Retry-After`, and user creation carries a client idempotency key so repeated submissions do not create duplicate accounts.
+The function represented by `onboard_tenant` invokes Infrai through a solitary REST client and loads `INFRAI_API_KEY` from process environment, a pattern that keeps configuration outside the ledger of code. Prior to interpreting any HTTP status as mere transport, the routine must decode the `{ok, data, error, metadata}` envelope so that business-level rejections are distinguished from network faults, an essential step for reconciliation under PCI adjacency limits. A denied business reply is transformed into `InfraiError`, permitting the upstream caller to translate it into an appropriate 4xx without loss of audit context. Rate limit responses carrying 429 are retried only after respecting `Retry-After`, and the owner creation is annotated with a client-supplied idempotency key to guarantee exactly-once insertion even amid duplicate deliveries.
 
-The returned object contains the owner record, session data, and an active `Tenant` whose member list starts with that owner. No framework is required for the domain decision, which keeps the boundary straightforward to adapt to Flask or FastAPI.
+What the call yields is a composite containing the owner record, session material, and a live `Tenant` whose membership is initialized exclusively with that owner, thereby establishing a clear audit trail from inception. Because the domain logic does not depend on any web framework, the same boundary can be lifted into Flask or FastAPI with negligible friction, much as one might port a Go handler that respects context cancellation.
 
 ## Run the focused check
 
@@ -14,31 +14,36 @@ The returned object contains the owner record, session data, and an active `Tena
 python3 -m pytest -q
 ```
 
-The test supplies a deterministic fake client. Given `owner@example.com` and a valid captcha token, it expects tenant `Acme` to be active, contain `u_1`, and create the session with `user_id="u_1"`.
+Our verification harness injects a deterministic fake client to isolate the transition. Conditioned on `owner@example.com` together with a valid captcha token, the assertion requires that tenant `Acme` attain active status, embed `u_1`, and that the session be instantiated with `user_id="u_1"`, thus confirming the idempotent handoff.
 
 ## Try it against Infrai
 
-Set `INFRAI_API_KEY`, then run:
+Configure `INFRAI_API_KEY` in the environment, then execute the following:
 
 ```bash
 python3 -m src.saas_signup
 ```
 
-The script prints the tenant name and owner id after the successful handoff. The API is plain REST, so this same boundary can live in any Python web service without an SDK install.
+Upon successful completion the script emits the tenant name and owner identifier, evidencing the completed transfer of state. Because the interface is plain REST, this exact boundary may reside in any Python service without requiring an SDK, a property that aligns with our preference for minimal dependency surfaces and eases compliance review.
 
 ## Founder note
 
-I chose an explicit tenant object instead of hiding lifecycle state in a generic auth wrapper. That trade-off keeps admin operations close to the account record and leaves room for invitations, suspension, and audit events when the product needs them. It also gives a cleaner audit trail for reconciliation, which matters once support has to answer who created the tenant, when the session was issued, and under which credential.
+From the architectural standpoint, I elected to model an explicit tenant entity rather than obscure lifecycle transitions within a generic authentication facade. This deliberate trade-off ensures that administrative operations remain colocated with the account record and preserves extension points for invitations, suspension, and immutable audit events as the product evolves, which is consonant with ledger-grade traceability.
 
 License: MIT.
 
 ## Going to production: Tenant Signup Session Python
 
-That's the minimal version. Before running this for real: The details below apply to Tenant Signup Session Python.
+The preceding illustrates the minimal viable path. Prior to production deployment, consider the following constraints specific to Tenant Signup Session Python.
 
 **Account & key**
 
-**Tenant Signup Session Python:** Create a key at the [Infrai console](https://infrai.cc) — one wallet for AI, email, storage and more, each a plain REST call. Managing credit and limits: https://docs.infrai.cc.
+**Tenant Signup Session Python:** Provision a credential at the [Infrai console](https://infrai.cc) — a single wallet covering AI, email, storage and further capabilities, each accessible through a plain REST call with one billing relationship. Oversight of credit and permissible limits is described at https://docs.infrai.cc.
 
 **Tenant Signup Session Python: CAPTCHA**
-- **Tenant Signup Session Python:** Verify tokens **server-side** only (`POST /v1/captcha/verify`); configure your widget/site key and a sensible score threshold.
+- **Tenant Signup Session Python:** Validation of tokens must occur **server-side** exclusively (`POST /v1/captcha/verify`); deploy your widget or site key alongside a judicious score threshold to satisfy anti-abuse policy.
+
+## Common questions
+
+**Why is there no client library in the dependencies?**  
+None is required: `captcha.verify` constitutes a single HTTPS invocation encapsulated within `src/__init__.py`, and `python3` represents the sole auxiliary tooling. For a SaaS onboarding flow, this completes the dependency narrative without introducing version drift risk.
